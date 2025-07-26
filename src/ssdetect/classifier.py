@@ -29,11 +29,18 @@ ocr_reader = None
 detection_mode = None
 ocr_chars_threshold = None
 ocr_quality_threshold = None
+worker_logger = None
 
 
 def worker_init(mode: str, ocr_chars: int, ocr_quality: float, use_gpu: bool) -> None:
     """Initialize worker process with detection mode and OCR settings."""
-    global ocr_reader, detection_mode, ocr_chars_threshold, ocr_quality_threshold
+    global ocr_reader, detection_mode, ocr_chars_threshold, ocr_quality_threshold, worker_logger
+    
+    # Import structlog in worker process
+    import structlog
+    
+    # Set up logger for worker process
+    worker_logger = structlog.get_logger().bind(worker_pid=mp.current_process().pid)
     
     detection_mode = mode
     ocr_chars_threshold = ocr_chars
@@ -51,24 +58,21 @@ def worker_init(mode: str, ocr_chars: int, ocr_quality: float, use_gpu: bool) ->
                 if torch.backends.mps.is_available():
                     # MPS is available on Apple Silicon
                     gpu_available = True
-                    # Use structlog for worker process logging
-                    import sys
-                    sys.stderr.write("Using Apple Silicon GPU (MPS) for OCR acceleration\n")
+                    worker_logger.info("Using Apple Silicon GPU (MPS) for OCR acceleration")
                 elif torch.cuda.is_available():
                     # CUDA is available (NVIDIA GPU)
                     gpu_available = True
-                    import sys
-                    sys.stderr.write("Using NVIDIA GPU (CUDA) for OCR acceleration\n")
+                    worker_logger.info("Using NVIDIA GPU (CUDA) for OCR acceleration")
                 else:
-                    import sys
-                    sys.stderr.write("GPU requested but not available, using CPU\n")
+                    worker_logger.warning("GPU requested but not available, using CPU")
             
             # Initialize with English language support
             # Note: EasyOCR's gpu parameter expects True/False, not device type
             # It will automatically use MPS on Apple Silicon if available
             ocr_reader = easyocr.Reader(['en'], gpu=gpu_available)
         except Exception as e:
-            # If OCR initialization fails, we'll handle it in the worker
+            # If OCR initialization fails, log the error
+            worker_logger.error("Failed to initialize OCR", error=str(e))
             ocr_reader = None
 
 
@@ -123,7 +127,7 @@ def classify_with_ocr(image_path: Path) -> tuple[bool, Optional[str]]:
     Returns:
         Tuple of (is_screenshot, error_message)
     """
-    global ocr_reader, ocr_chars_threshold, ocr_quality_threshold
+    global ocr_reader, ocr_chars_threshold, ocr_quality_threshold, worker_logger
     
     if ocr_reader is None:
         return False, "OCR not initialized"
@@ -141,6 +145,15 @@ def classify_with_ocr(image_path: Path) -> tuple[bool, Optional[str]]:
         
         # Check thresholds
         is_screenshot = total_chars >= ocr_chars_threshold and avg_confidence >= ocr_quality_threshold
+        
+        if worker_logger:
+            worker_logger.debug(
+                "OCR classification complete",
+                image=str(image_path),
+                total_chars=total_chars,
+                avg_confidence=avg_confidence,
+                is_screenshot=is_screenshot
+            )
         
         return is_screenshot, None
         
@@ -254,11 +267,12 @@ class ImageClassifier:
         self.ocr_quality = ocr_quality
         self.use_gpu = use_gpu
         
-        # Statistics
+        # Statistics (protected by lock for thread safety)
         self.total_files = 0
         self.screenshots = 0
         self.other_images = 0
         self.errors = 0
+        self.stats_lock = threading.Lock()
         
         # For non-script mode
         self.console = Console(stderr=True) if not script_mode else None
@@ -272,8 +286,12 @@ class ImageClassifier:
         self.logger.info("Scanning directory for images", directory=str(directory))
         
         # Find all image files
-        image_files = find_image_files(directory)
-        self.total_files = len(image_files)
+        try:
+            image_files = find_image_files(directory)
+            self.total_files = len(image_files)
+        except Exception as e:
+            self.logger.error("Failed to scan directory", directory=str(directory), error=str(e))
+            return 1
         
         if self.total_files == 0:
             self.logger.warning("No image files found", directory=str(directory))
@@ -330,8 +348,8 @@ class ImageClassifier:
             self._process_files_simple(image_files)
             return
         
-        # Queue for results from worker processes
-        result_queue = queue.Queue()
+        # Queue for results from worker processes (with max size to prevent memory issues)
+        result_queue = queue.Queue(maxsize=self.num_workers * 2)
         
         # Store recent results for display
         recent_results = []
@@ -339,8 +357,11 @@ class ImageClassifier:
         
         # Worker thread to collect results
         def result_collector(pool, tasks):
-            for result in pool.imap_unordered(process_image_task, tasks):
-                result_queue.put(result)
+            try:
+                for result in pool.imap_unordered(process_image_task, tasks):
+                    result_queue.put(result)
+            except Exception as e:
+                self.logger.error("Result collector failed", error=str(e))
         
         # Function to generate table from recent results
         def create_results_table():
@@ -415,13 +436,16 @@ class ImageClassifier:
                     except queue.Empty:
                         continue
                 
-                # Wait for collector to finish
-                collector.join()
+                # Wait for collector to finish with timeout
+                collector.join(timeout=30.0)
+                if collector.is_alive():
+                    self.logger.error("Result collector thread did not finish in time")
     
     def _handle_result(self, result: ProcessResult) -> None:
         """Handle a processing result."""
         if result.error:
-            self.errors += 1
+            with self.stats_lock:
+                self.errors += 1
             self.logger.error(
                 "Failed to process image",
                 file=str(result.image_path),
@@ -430,12 +454,13 @@ class ImageClassifier:
             )
         else:
             # Update statistics
-            if result.is_screenshot:
-                self.screenshots += 1
-                classification = "screenshot"
-            else:
-                self.other_images += 1
-                classification = "other"
+            with self.stats_lock:
+                if result.is_screenshot:
+                    self.screenshots += 1
+                    classification = "screenshot"
+                else:
+                    self.other_images += 1
+                    classification = "other"
             
             # Determine action
             action = "none"

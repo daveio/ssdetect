@@ -33,6 +33,15 @@ def cli(directory: Path, move: Path | None, copy: Path | None, dry_run: bool, ou
         click.echo("Error: --move and --copy cannot be used together", err=True)
         sys.exit(1)
     
+    # Validate OCR parameters
+    if detection_mode in ('ocr', 'both'):
+        if ocr_chars < 1:
+            click.echo("Error: --ocr-chars must be at least 1", err=True)
+            sys.exit(1)
+        if not (0.0 <= ocr_quality <= 1.0):
+            click.echo("Error: --ocr-quality must be between 0.0 and 1.0", err=True)
+            sys.exit(1)
+    
     # Setup logging based on output format
     logger = setup_logging(json_output=output_json, script_mode=script)
     

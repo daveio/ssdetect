@@ -105,9 +105,13 @@ def create_progress_bar(total: int, script_mode: bool = False) -> Progress | Non
 
 def move_file(src: Path, dst_dir: Path, dry_run: bool = False) -> Path:
     """Move a file to a destination directory, preserving relative path structure."""
-    # Create destination directory if it doesn't exist
+    # Create destination directory if it doesn't exist (thread-safe)
     if not dry_run:
-        dst_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            dst_dir.mkdir(parents=True, exist_ok=True)
+        except FileExistsError:
+            # Race condition: another process created it
+            pass
     
     # Preserve original filename
     dst_path = dst_dir / src.name
@@ -129,9 +133,13 @@ def move_file(src: Path, dst_dir: Path, dry_run: bool = False) -> Path:
 
 def copy_file(src: Path, dst_dir: Path, dry_run: bool = False) -> Path:
     """Copy a file to a destination directory, preserving relative path structure."""
-    # Create destination directory if it doesn't exist
+    # Create destination directory if it doesn't exist (thread-safe)
     if not dry_run:
-        dst_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            dst_dir.mkdir(parents=True, exist_ok=True)
+        except FileExistsError:
+            # Race condition: another process created it
+            pass
     
     # Preserve original filename
     dst_path = dst_dir / src.name
