@@ -248,3 +248,5 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+screenshots_output/
+test_images/

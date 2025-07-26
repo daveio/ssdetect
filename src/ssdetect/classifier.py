@@ -1,0 +1,349 @@
+"""Core classification logic for ssdetect."""
+import multiprocessing as mp
+import queue
+import threading
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Optional
+
+import numpy as np
+import structlog
+from PIL import Image
+from rich.console import Console
+from rich.layout import Layout
+from rich.live import Live
+from rich.panel import Panel
+from rich.table import Table
+from scipy import signal
+from screenshot_detector.screenshot_detector import check_img
+
+from ssdetect.utils import (
+    copy_file,
+    create_progress_bar,
+    find_image_files,
+    move_file,
+)
+
+
+@dataclass
+class ProcessResult:
+    """Result from processing a single image."""
+    image_path: Path
+    index: int
+    is_screenshot: bool
+    error: Optional[str] = None
+    destination: Optional[Path] = None
+
+
+def classify_image_worker(image_path: Path) -> tuple[bool, Optional[str]]:
+    """Worker function to classify a single image.
+    
+    Returns:
+        Tuple of (is_screenshot, error_message)
+    """
+    try:
+        # Load image as grayscale
+        img = Image.open(image_path).convert('L')
+        img_array = np.array(img)
+        
+        # Apply the same kernel as screenshot_detector
+        kernel = np.array([[-1,-1,-1],
+                           [ 0, 0, 0],
+                           [+1,+1,+1]])
+        
+        # Convolve to detect horizontal edges
+        dst = signal.convolve2d(img_array, kernel, boundary='symm', mode='same')
+        dst = np.absolute(dst)
+        
+        # Normalize to 0-10 range
+        # Handle edge case where image has no variation
+        if dst.min() == dst.max():
+            dst2 = np.zeros_like(dst, dtype=int)
+        else:
+            dst2 = np.interp(dst, (dst.min(), dst.max()), (0, 10)).astype(int)
+        
+        # Check for horizontal lines
+        list_index = check_img(dst2)
+        
+        # If we found horizontal lines, it's a screenshot
+        return len(list_index) >= 1, None
+        
+    except MemoryError:
+        return False, "Image too large to process"
+    except OSError as e:
+        return False, f"Failed to open image: {str(e)}"
+    except Exception as e:
+        return False, f"Failed to classify: {str(e)}"
+
+
+def process_image_task(args: tuple[Path, int, Optional[Path], Optional[Path], bool]) -> ProcessResult:
+    """Process a single image (classify and optionally move/copy).
+    
+    Args:
+        args: Tuple of (image_path, index, move_to, copy_to, dry_run)
+    
+    Returns:
+        ProcessResult object
+    """
+    image_path, index, move_to, copy_to, dry_run = args
+    
+    # Classify the image
+    is_screenshot, error = classify_image_worker(image_path)
+    
+    if error:
+        return ProcessResult(image_path, index, False, error)
+    
+    # Handle move/copy if needed
+    destination = None
+    if is_screenshot and (move_to or copy_to):
+        try:
+            if move_to:
+                destination = move_file(image_path, move_to, dry_run)
+            elif copy_to:
+                destination = copy_file(image_path, copy_to, dry_run)
+        except Exception as e:
+            return ProcessResult(image_path, index, is_screenshot, f"Failed to move/copy: {str(e)}")
+    
+    return ProcessResult(image_path, index, is_screenshot, None, destination)
+
+
+class ImageClassifier:
+    """Handles image classification and file operations."""
+    
+    def __init__(
+        self,
+        logger: structlog.BoundLogger,
+        move_to: Path | None = None,
+        copy_to: Path | None = None,
+        dry_run: bool = False,
+        json_output: bool = False,
+        script_mode: bool = False,
+        num_workers: int = 8,
+    ):
+        """Initialize the classifier."""
+        self.logger = logger
+        self.move_to = move_to
+        self.copy_to = copy_to
+        self.dry_run = dry_run
+        self.json_output = json_output
+        self.script_mode = script_mode
+        self.num_workers = num_workers
+        
+        # Statistics
+        self.total_files = 0
+        self.screenshots = 0
+        self.other_images = 0
+        self.errors = 0
+        
+        # For non-script mode
+        self.console = Console(stderr=True) if not script_mode else None
+    
+    def process_directory(self, directory: Path) -> int:
+        """Process all images in the given directory.
+        
+        Returns:
+            Exit code: 0 for success, 1 if there were errors.
+        """
+        self.logger.info("Scanning directory for images", directory=str(directory))
+        
+        # Find all image files
+        image_files = find_image_files(directory)
+        self.total_files = len(image_files)
+        
+        if self.total_files == 0:
+            self.logger.warning("No image files found", directory=str(directory))
+            return 0
+        
+        self.logger.info("Found images to process", count=self.total_files, workers=self.num_workers)
+        
+        # Process files
+        if self.script_mode or self.json_output:
+            # Simple processing without Rich UI
+            self._process_files_simple(image_files)
+        else:
+            # Rich UI with progress bar and live display
+            self._process_files_rich(image_files)
+        
+        # Log summary
+        self._log_summary()
+        
+        # Return exit code based on errors
+        return 1 if self.errors > 0 else 0
+    
+    def _process_files_simple(self, image_files: list[Path]) -> None:
+        """Process files without Rich UI using multiprocessing."""
+        # Prepare tasks
+        tasks = [
+            (path, i, self.move_to, self.copy_to, self.dry_run)
+            for i, path in enumerate(image_files, 1)
+        ]
+        
+        # Process with multiprocessing
+        with mp.Pool(processes=self.num_workers) as pool:
+            results = pool.map(process_image_task, tasks)
+        
+        # Process results
+        for result in results:
+            self._handle_result(result)
+    
+    def _process_files_rich(self, image_files: list[Path]) -> None:
+        """Process files with Rich UI using multiprocessing."""
+        progress = create_progress_bar(self.total_files, self.script_mode)
+        
+        if progress is None:
+            self._process_files_simple(image_files)
+            return
+        
+        # Create a table for live updates
+        table = Table(title="Classification Results")
+        table.add_column("File", style="cyan")
+        table.add_column("Result", style="green")
+        table.add_column("Action", style="yellow")
+        
+        # Create a layout with progress bar and table
+        layout = Layout()
+        layout.split_column(
+            Layout(progress, size=3),
+            Layout(Panel(table, title="Classification Results", border_style="blue"))
+        )
+        
+        # Queue for results from worker processes
+        result_queue = queue.Queue()
+        
+        # Worker thread to collect results
+        def result_collector(pool, tasks):
+            for result in pool.imap_unordered(process_image_task, tasks):
+                result_queue.put(result)
+        
+        with Live(layout, console=self.console, refresh_per_second=4) as live:
+            task = progress.add_task("Classifying images...", total=self.total_files)
+            
+            # Prepare tasks
+            tasks = [
+                (path, i, self.move_to, self.copy_to, self.dry_run)
+                for i, path in enumerate(image_files, 1)
+            ]
+            
+            # Start processing in pool
+            with mp.Pool(processes=self.num_workers) as pool:
+                # Start collector thread
+                collector = threading.Thread(target=result_collector, args=(pool, tasks))
+                collector.start()
+                
+                # Process results as they come in
+                processed = 0
+                while processed < self.total_files:
+                    try:
+                        result = result_queue.get(timeout=0.1)
+                        self._handle_result(result)
+                        
+                        # Update progress
+                        progress.update(task, advance=1)
+                        processed += 1
+                        
+                        # Update table
+                        classification = "screenshot" if result.is_screenshot else "other"
+                        if result.error:
+                            classification = "error"
+                        
+                        action = "none"
+                        if result.is_screenshot and not result.error:
+                            if self.move_to:
+                                action = "moved" if not self.dry_run else "would_move"
+                            elif self.copy_to:
+                                action = "copied" if not self.dry_run else "would_copy"
+                        
+                        table.add_row(
+                            str(result.image_path.name),
+                            classification,
+                            action
+                        )
+                        
+                        # Keep table size manageable
+                        if len(table.rows) > 10:
+                            table.rows = table.rows[-10:]
+                    
+                    except queue.Empty:
+                        continue
+                
+                # Wait for collector to finish
+                collector.join()
+    
+    def _handle_result(self, result: ProcessResult) -> None:
+        """Handle a processing result."""
+        if result.error:
+            self.errors += 1
+            self.logger.error(
+                "Failed to process image",
+                file=str(result.image_path),
+                index=result.index,
+                error=result.error
+            )
+        else:
+            # Update statistics
+            if result.is_screenshot:
+                self.screenshots += 1
+                classification = "screenshot"
+            else:
+                self.other_images += 1
+                classification = "other"
+            
+            # Determine action
+            action = "none"
+            if result.is_screenshot and (self.move_to or self.copy_to):
+                if self.move_to:
+                    action = "moved" if not self.dry_run else "would_move"
+                elif self.copy_to:
+                    action = "copied" if not self.dry_run else "would_copy"
+            
+            # Log result
+            log_data = {
+                "file": str(result.image_path),
+                "index": result.index,
+                "classification": classification,
+                "action": action,
+            }
+            
+            if result.destination:
+                log_data["destination"] = str(result.destination)
+            
+            self.logger.info("Processed image", **log_data)
+    
+    def _log_summary(self) -> None:
+        """Log a summary of the processing results."""
+        summary_data = {
+            "total_files": self.total_files,
+            "screenshots": self.screenshots,
+            "other_images": self.other_images,
+            "errors": self.errors,
+        }
+        
+        if self.move_to:
+            summary_data["action"] = "moved" if not self.dry_run else "would_move"
+            summary_data["destination"] = str(self.move_to)
+        elif self.copy_to:
+            summary_data["action"] = "copied" if not self.dry_run else "would_copy"
+            summary_data["destination"] = str(self.copy_to)
+        
+        self.logger.info("Classification complete", **summary_data)
+        
+        # For non-script, non-JSON mode, also print a nice summary table
+        if not self.script_mode and not self.json_output and self.console:
+            table = Table(title="Summary", show_header=False)
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="green")
+            
+            table.add_row("Total Files", str(self.total_files))
+            table.add_row("Screenshots", str(self.screenshots))
+            table.add_row("Other Images", str(self.other_images))
+            table.add_row("Errors", str(self.errors))
+            
+            if self.move_to or self.copy_to:
+                action = "Moved to" if self.move_to else "Copied to"
+                if self.dry_run:
+                    action = f"Would {action.lower()}"
+                destination = str(self.move_to or self.copy_to)
+                table.add_row(action, destination)
+            
+            self.console.print("\n")
+            self.console.print(table)
