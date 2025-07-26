@@ -16,7 +16,12 @@ from ssdetect.utils import setup_logging
 @click.option("--json", "output_json", is_flag=True, help="Output in JSON format for scripts")
 @click.option("--script", is_flag=True, help="Disable rich UI for script usage")
 @click.option("--workers", type=click.IntRange(1, 32), default=8, help="Number of worker processes (default: 8)")
-def cli(directory: Path, move: Path | None, copy: Path | None, dry_run: bool, output_json: bool, script: bool, workers: int):
+@click.option("--ocr", "detection_mode", flag_value="ocr", help="Use only OCR-based detection")
+@click.option("--horizontal", "detection_mode", flag_value="horizontal", help="Use only horizontal edge detection")
+@click.option("--both", "detection_mode", flag_value="both", default=True, help="Use both detection methods (default)")
+@click.option("--ocr-chars", type=int, default=10, help="Minimum characters for OCR detection (default: 10)")
+@click.option("--ocr-quality", type=click.FloatRange(0.0, 1.0), default=0.8, help="Minimum average confidence for OCR (default: 0.8)")
+def cli(directory: Path, move: Path | None, copy: Path | None, dry_run: bool, output_json: bool, script: bool, workers: int, detection_mode: str, ocr_chars: int, ocr_quality: float):
     """Classify images as screenshots or other.
     
     Scans DIRECTORY (default: current directory) for images and classifies them
@@ -38,7 +43,10 @@ def cli(directory: Path, move: Path | None, copy: Path | None, dry_run: bool, ou
         dry_run=dry_run,
         json_output=output_json,
         script_mode=script,
-        num_workers=workers
+        num_workers=workers,
+        detection_mode=detection_mode,
+        ocr_chars=ocr_chars,
+        ocr_quality=ocr_quality
     )
     
     # Run classification

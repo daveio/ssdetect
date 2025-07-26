@@ -24,6 +24,31 @@ from ssdetect.utils import (
     move_file,
 )
 
+# Global variables for worker processes
+ocr_reader = None
+detection_mode = None
+ocr_chars_threshold = None
+ocr_quality_threshold = None
+
+
+def worker_init(mode: str, ocr_chars: int, ocr_quality: float) -> None:
+    """Initialize worker process with detection mode and OCR settings."""
+    global ocr_reader, detection_mode, ocr_chars_threshold, ocr_quality_threshold
+    
+    detection_mode = mode
+    ocr_chars_threshold = ocr_chars
+    ocr_quality_threshold = ocr_quality
+    
+    # Initialize EasyOCR if needed
+    if mode in ('ocr', 'both'):
+        try:
+            import easyocr
+            # Initialize with English language support
+            ocr_reader = easyocr.Reader(['en'], gpu=False)
+        except Exception as e:
+            # If OCR initialization fails, we'll handle it in the worker
+            ocr_reader = None
+
 
 @dataclass
 class ProcessResult:
@@ -35,38 +60,108 @@ class ProcessResult:
     destination: Optional[Path] = None
 
 
+def classify_with_horizontal(img_array: np.ndarray) -> bool:
+    """Classify image using horizontal edge detection.
+    
+    Args:
+        img_array: Grayscale image as numpy array
+        
+    Returns:
+        True if screenshot detected
+    """
+    # Apply the same kernel as screenshot_detector
+    kernel = np.array([[-1,-1,-1],
+                       [ 0, 0, 0],
+                       [+1,+1,+1]])
+    
+    # Convolve to detect horizontal edges
+    dst = signal.convolve2d(img_array, kernel, boundary='symm', mode='same')
+    dst = np.absolute(dst)
+    
+    # Normalize to 0-10 range
+    # Handle edge case where image has no variation
+    if dst.min() == dst.max():
+        dst2 = np.zeros_like(dst, dtype=int)
+    else:
+        dst2 = np.interp(dst, (dst.min(), dst.max()), (0, 10)).astype(int)
+    
+    # Check for horizontal lines
+    list_index = check_img(dst2)
+    
+    # If we found horizontal lines, it's a screenshot
+    return len(list_index) >= 1
+
+
+def classify_with_ocr(image_path: Path) -> tuple[bool, Optional[str]]:
+    """Classify image using OCR text detection.
+    
+    Args:
+        image_path: Path to the image
+        
+    Returns:
+        Tuple of (is_screenshot, error_message)
+    """
+    global ocr_reader, ocr_chars_threshold, ocr_quality_threshold
+    
+    if ocr_reader is None:
+        return False, "OCR not initialized"
+    
+    try:
+        # Read text from image
+        results = ocr_reader.readtext(str(image_path))
+        
+        if not results:
+            return False, None
+        
+        # Calculate total characters and average confidence
+        total_chars = sum(len(text) for _, text, _ in results)
+        avg_confidence = sum(conf for _, _, conf in results) / len(results)
+        
+        # Check thresholds
+        is_screenshot = total_chars >= ocr_chars_threshold and avg_confidence >= ocr_quality_threshold
+        
+        return is_screenshot, None
+        
+    except Exception as e:
+        return False, f"OCR failed: {str(e)}"
+
+
 def classify_image_worker(image_path: Path) -> tuple[bool, Optional[str]]:
     """Worker function to classify a single image.
     
     Returns:
         Tuple of (is_screenshot, error_message)
     """
+    global detection_mode
+    
     try:
-        # Load image as grayscale
-        img = Image.open(image_path).convert('L')
-        img_array = np.array(img)
+        # Handle horizontal detection
+        if detection_mode in ('horizontal', 'both'):
+            # Load image as grayscale
+            img = Image.open(image_path).convert('L')
+            img_array = np.array(img)
+            
+            is_screenshot_horizontal = classify_with_horizontal(img_array)
+            
+            # If horizontal detection found it and we're not in 'both' mode, return
+            if detection_mode == 'horizontal':
+                return is_screenshot_horizontal, None
+            
+            # In 'both' mode, if horizontal detected it, it's a screenshot
+            if is_screenshot_horizontal:
+                return True, None
         
-        # Apply the same kernel as screenshot_detector
-        kernel = np.array([[-1,-1,-1],
-                           [ 0, 0, 0],
-                           [+1,+1,+1]])
+        # Handle OCR detection
+        if detection_mode in ('ocr', 'both'):
+            is_screenshot_ocr, error = classify_with_ocr(image_path)
+            
+            if error:
+                return False, error
+            
+            return is_screenshot_ocr, None
         
-        # Convolve to detect horizontal edges
-        dst = signal.convolve2d(img_array, kernel, boundary='symm', mode='same')
-        dst = np.absolute(dst)
-        
-        # Normalize to 0-10 range
-        # Handle edge case where image has no variation
-        if dst.min() == dst.max():
-            dst2 = np.zeros_like(dst, dtype=int)
-        else:
-            dst2 = np.interp(dst, (dst.min(), dst.max()), (0, 10)).astype(int)
-        
-        # Check for horizontal lines
-        list_index = check_img(dst2)
-        
-        # If we found horizontal lines, it's a screenshot
-        return len(list_index) >= 1, None
+        # Should not reach here
+        return False, None
         
     except MemoryError:
         return False, "Image too large to process"
@@ -119,6 +214,9 @@ class ImageClassifier:
         json_output: bool = False,
         script_mode: bool = False,
         num_workers: int = 8,
+        detection_mode: str = "both",
+        ocr_chars: int = 10,
+        ocr_quality: float = 0.8,
     ):
         """Initialize the classifier."""
         self.logger = logger
@@ -128,6 +226,9 @@ class ImageClassifier:
         self.json_output = json_output
         self.script_mode = script_mode
         self.num_workers = num_workers
+        self.detection_mode = detection_mode
+        self.ocr_chars = ocr_chars
+        self.ocr_quality = ocr_quality
         
         # Statistics
         self.total_files = 0
@@ -154,7 +255,14 @@ class ImageClassifier:
             self.logger.warning("No image files found", directory=str(directory))
             return 0
         
-        self.logger.info("Found images to process", count=self.total_files, workers=self.num_workers)
+        self.logger.info(
+            "Found images to process", 
+            count=self.total_files, 
+            workers=self.num_workers,
+            detection_mode=self.detection_mode,
+            ocr_chars=self.ocr_chars if self.detection_mode in ('ocr', 'both') else None,
+            ocr_quality=self.ocr_quality if self.detection_mode in ('ocr', 'both') else None
+        )
         
         # Process files
         if self.script_mode or self.json_output:
@@ -178,8 +286,12 @@ class ImageClassifier:
             for i, path in enumerate(image_files, 1)
         ]
         
-        # Process with multiprocessing
-        with mp.Pool(processes=self.num_workers) as pool:
+        # Process with multiprocessing using worker initialization
+        with mp.Pool(
+            processes=self.num_workers,
+            initializer=worker_init,
+            initargs=(self.detection_mode, self.ocr_chars, self.ocr_quality)
+        ) as pool:
             results = pool.map(process_image_task, tasks)
         
         # Process results
@@ -243,8 +355,12 @@ class ImageClassifier:
                 for i, path in enumerate(image_files, 1)
             ]
             
-            # Start processing in pool
-            with mp.Pool(processes=self.num_workers) as pool:
+            # Start processing in pool with worker initialization
+            with mp.Pool(
+                processes=self.num_workers,
+                initializer=worker_init,
+                initargs=(self.detection_mode, self.ocr_chars, self.ocr_quality)
+            ) as pool:
                 # Start collector thread
                 collector = threading.Thread(target=result_collector, args=(pool, tasks))
                 collector.start()
