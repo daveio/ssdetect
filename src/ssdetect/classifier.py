@@ -31,7 +31,7 @@ ocr_chars_threshold = None
 ocr_quality_threshold = None
 
 
-def worker_init(mode: str, ocr_chars: int, ocr_quality: float) -> None:
+def worker_init(mode: str, ocr_chars: int, ocr_quality: float, use_gpu: bool) -> None:
     """Initialize worker process with detection mode and OCR settings."""
     global ocr_reader, detection_mode, ocr_chars_threshold, ocr_quality_threshold
     
@@ -43,8 +43,30 @@ def worker_init(mode: str, ocr_chars: int, ocr_quality: float) -> None:
     if mode in ('ocr', 'both'):
         try:
             import easyocr
+            import torch
+            
+            # Check if GPU should be used and is available
+            gpu_available = False
+            if use_gpu:
+                if torch.backends.mps.is_available():
+                    # MPS is available on Apple Silicon
+                    gpu_available = True
+                    # Use structlog for worker process logging
+                    import sys
+                    sys.stderr.write("Using Apple Silicon GPU (MPS) for OCR acceleration\n")
+                elif torch.cuda.is_available():
+                    # CUDA is available (NVIDIA GPU)
+                    gpu_available = True
+                    import sys
+                    sys.stderr.write("Using NVIDIA GPU (CUDA) for OCR acceleration\n")
+                else:
+                    import sys
+                    sys.stderr.write("GPU requested but not available, using CPU\n")
+            
             # Initialize with English language support
-            ocr_reader = easyocr.Reader(['en'], gpu=False)
+            # Note: EasyOCR's gpu parameter expects True/False, not device type
+            # It will automatically use MPS on Apple Silicon if available
+            ocr_reader = easyocr.Reader(['en'], gpu=gpu_available)
         except Exception as e:
             # If OCR initialization fails, we'll handle it in the worker
             ocr_reader = None
@@ -217,6 +239,7 @@ class ImageClassifier:
         detection_mode: str = "both",
         ocr_chars: int = 10,
         ocr_quality: float = 0.8,
+        use_gpu: bool = True,
     ):
         """Initialize the classifier."""
         self.logger = logger
@@ -229,6 +252,7 @@ class ImageClassifier:
         self.detection_mode = detection_mode
         self.ocr_chars = ocr_chars
         self.ocr_quality = ocr_quality
+        self.use_gpu = use_gpu
         
         # Statistics
         self.total_files = 0
@@ -290,7 +314,7 @@ class ImageClassifier:
         with mp.Pool(
             processes=self.num_workers,
             initializer=worker_init,
-            initargs=(self.detection_mode, self.ocr_chars, self.ocr_quality)
+            initargs=(self.detection_mode, self.ocr_chars, self.ocr_quality, self.use_gpu)
         ) as pool:
             results = pool.map(process_image_task, tasks)
         
@@ -359,7 +383,7 @@ class ImageClassifier:
             with mp.Pool(
                 processes=self.num_workers,
                 initializer=worker_init,
-                initargs=(self.detection_mode, self.ocr_chars, self.ocr_quality)
+                initargs=(self.detection_mode, self.ocr_chars, self.ocr_quality, self.use_gpu)
             ) as pool:
                 # Start collector thread
                 collector = threading.Thread(target=result_collector, args=(pool, tasks))

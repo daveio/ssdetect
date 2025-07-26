@@ -21,7 +21,8 @@ from ssdetect.utils import setup_logging
 @click.option("--both", "detection_mode", flag_value="both", default=True, help="Use both detection methods (default)")
 @click.option("--ocr-chars", type=int, default=10, help="Minimum characters for OCR detection (default: 10)")
 @click.option("--ocr-quality", type=click.FloatRange(0.0, 1.0), default=0.8, help="Minimum average confidence for OCR (default: 0.8)")
-def cli(directory: Path, move: Path | None, copy: Path | None, dry_run: bool, output_json: bool, script: bool, workers: int, detection_mode: str, ocr_chars: int, ocr_quality: float):
+@click.option("--no-gpu", is_flag=True, help="Disable GPU acceleration for OCR (use CPU only)")
+def cli(directory: Path, move: Path | None, copy: Path | None, dry_run: bool, output_json: bool, script: bool, workers: int, detection_mode: str, ocr_chars: int, ocr_quality: float, no_gpu: bool):
     """Classify images as screenshots or other.
     
     Scans DIRECTORY (default: current directory) for images and classifies them
@@ -46,7 +47,8 @@ def cli(directory: Path, move: Path | None, copy: Path | None, dry_run: bool, ou
         num_workers=workers,
         detection_mode=detection_mode,
         ocr_chars=ocr_chars,
-        ocr_quality=ocr_quality
+        ocr_quality=ocr_quality,
+        use_gpu=not no_gpu
     )
     
     # Run classification
