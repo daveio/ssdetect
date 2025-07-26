@@ -1,4 +1,5 @@
 """Entry point for the ssdetect CLI."""
+
 from ssdetect.cli import cli
 
 

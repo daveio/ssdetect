@@ -5,12 +5,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 `ssdetect` is a command-line tool for classifying images as screenshots or regular images using two detection methods:
+
 1. **Horizontal edge detection** - Detects horizontal lines common in screenshots using the `screenshot_detector` library
 2. **OCR-based detection** - Uses EasyOCR to detect text and classify based on character count and confidence
 
 ## Commands
 
 ### Development
+
 ```bash
 # Install dependencies (using uv)
 uv sync
@@ -30,6 +32,7 @@ uv run ssdetect --no-gpu input/       # Disable GPU acceleration for OCR
 ```
 
 ### Testing
+
 ```bash
 # Test with sample images
 uv run ssdetect --dry-run --horizontal input/
