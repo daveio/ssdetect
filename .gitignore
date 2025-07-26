@@ -15,7 +15,8 @@ wheels/
 .DS_Store
 .AppleDouble
 .LSOverride
-Icon[]
+Icon[
+]
 
 # Thumbnails
 ._*
@@ -248,5 +249,5 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-screenshots_output/
-test_images/
+input/
+output/

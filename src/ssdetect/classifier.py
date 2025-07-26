@@ -194,28 +194,47 @@ class ImageClassifier:
             self._process_files_simple(image_files)
             return
         
-        # Create a table for live updates
-        table = Table(title="Classification Results")
-        table.add_column("File", style="cyan")
-        table.add_column("Result", style="green")
-        table.add_column("Action", style="yellow")
-        
-        # Create a layout with progress bar and table
-        layout = Layout()
-        layout.split_column(
-            Layout(progress, size=3),
-            Layout(Panel(table, title="Classification Results", border_style="blue"))
-        )
-        
         # Queue for results from worker processes
         result_queue = queue.Queue()
+        
+        # Store recent results for display
+        recent_results = []
+        results_lock = threading.Lock()
         
         # Worker thread to collect results
         def result_collector(pool, tasks):
             for result in pool.imap_unordered(process_image_task, tasks):
                 result_queue.put(result)
         
-        with Live(layout, console=self.console, refresh_per_second=4) as live:
+        # Function to generate table from recent results
+        def create_results_table():
+            table = Table(title="Classification Results (last 10)")
+            table.add_column("File", style="cyan")
+            table.add_column("Result", style="green")
+            table.add_column("Action", style="yellow")
+            
+            with results_lock:
+                for res in recent_results[-10:]:
+                    classification = "screenshot" if res.is_screenshot else "other"
+                    if res.error:
+                        classification = "error"
+                    
+                    action = "none"
+                    if res.is_screenshot and not res.error:
+                        if self.move_to:
+                            action = "moved" if not self.dry_run else "would_move"
+                        elif self.copy_to:
+                            action = "copied" if not self.dry_run else "would_copy"
+                    
+                    table.add_row(
+                        str(res.image_path.name),
+                        classification,
+                        action
+                    )
+            
+            return table
+        
+        with Live(console=self.console, refresh_per_second=4) as live:
             task = progress.add_task("Classifying images...", total=self.total_files)
             
             # Prepare tasks
@@ -241,27 +260,17 @@ class ImageClassifier:
                         progress.update(task, advance=1)
                         processed += 1
                         
-                        # Update table
-                        classification = "screenshot" if result.is_screenshot else "other"
-                        if result.error:
-                            classification = "error"
+                        # Add to recent results
+                        with results_lock:
+                            recent_results.append(result)
                         
-                        action = "none"
-                        if result.is_screenshot and not result.error:
-                            if self.move_to:
-                                action = "moved" if not self.dry_run else "would_move"
-                            elif self.copy_to:
-                                action = "copied" if not self.dry_run else "would_copy"
-                        
-                        table.add_row(
-                            str(result.image_path.name),
-                            classification,
-                            action
+                        # Update display
+                        layout = Layout()
+                        layout.split_column(
+                            Layout(progress, size=3),
+                            Layout(Panel(create_results_table(), title="Classification Results", border_style="blue"))
                         )
-                        
-                        # Keep table size manageable
-                        if len(table.rows) > 10:
-                            table.rows = table.rows[-10:]
+                        live.update(layout)
                     
                     except queue.Empty:
                         continue
