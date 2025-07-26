@@ -1,0 +1,16 @@
+[env]
+SSDETECT_MISE_ACTIVE = 'true'
+
+[settings]
+env_file = '.env'
+idiomatic_version_file = false
+idiomatic_version_file_enable_tools = []
+
+
+[tools]
+python = { version = '3.13.5' }
+uv = { version = '0.8.3' }
+
+[tasks]
+'hello' = { run = "echo 'Hello, world!'" }
+'claude' = { run = "bun run claude", description = "Invoke Claude Code", alias = "cc" }
