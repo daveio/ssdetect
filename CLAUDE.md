@@ -53,6 +53,22 @@ uv run ssdetect --script --move output/ input/
 uv run ssdetect --script --copy output/ input/
 ```
 
+### Code Quality
+
+```bash
+# Check all files for linting issues
+trunk check -a
+
+# Check specific files or directories
+trunk check src/
+
+# Auto-format all files
+trunk fmt -a
+
+# Auto-format specific files or directories
+trunk fmt src/
+```
+
 ## Architecture
 
 ### Core Components

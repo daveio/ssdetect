@@ -146,6 +146,26 @@ The usual suspects: `jpg`, `jpeg`, `png`, `bmp`, `gif`, `webp`, `tiff`, `heic`, 
 - `1`: Something went wrong (see logs for details)
 - `130`: User got impatient and hit Ctrl+C
 
+## Development
+
+### Code Quality
+
+This project uses [Trunk](https://trunk.io) for linting and formatting:
+
+```bash
+# Check all files for linting issues
+trunk check -a
+
+# Check specific files or directories
+trunk check src/
+
+# Auto-format all files
+trunk fmt -a
+
+# Auto-format specific files or directories
+trunk fmt src/
+```
+
 ## Contributing
 
 Found a bug? Congratulations, you're a beta tester! Issues and PRs welcome, though the I may judge your screenshot organization habits.

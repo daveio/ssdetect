@@ -139,7 +139,7 @@ def move_file(src: Path, dst_dir: Path) -> Path:
         xmp_dst = dst_path.parent / f"{dst_path.stem}{xmp_src.suffix}"
         try:
             shutil.move(str(xmp_src), str(xmp_dst))
-        except Exception:
+        except (OSError, IOError, shutil.Error):
             # If XMP move fails, don't fail the entire operation
             pass
 
@@ -185,7 +185,7 @@ def copy_file(src: Path, dst_dir: Path) -> Path:
         xmp_dst = dst_path.parent / f"{dst_path.stem}{xmp_src.suffix}"
         try:
             shutil.copy2(str(xmp_src), str(xmp_dst))
-        except Exception:
+        except (OSError, IOError, shutil.Error):
             # If XMP copy fails, don't fail the entire operation
             pass
 
