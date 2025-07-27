@@ -27,8 +27,8 @@ uv run ssdetect
 # Analyze a specific directory
 uv run ssdetect /path/to/your/digital/chaos
 
-# See what would happen without actually doing it (trust issues are valid)
-uv run ssdetect --dry-run input/
+# Just analyze without moving/copying (default behavior)
+uv run ssdetect input/
 ```
 
 ### Detection Modes
@@ -75,6 +75,10 @@ uv run ssdetect --ocr-quality=0.8 input/
 # Disable GPU because you hate performance. Don't use this on
 # Apple Silicon - the MPS module is considered a GPU.
 uv run ssdetect --no-gpu input/
+
+# Enable experimental heuristics for better screenshot detection
+# (may help reduce false positives on images with engraved/natural text)
+uv run ssdetect --ocr --extra-heuristics input/
 ```
 
 ### Output Formats
@@ -97,16 +101,23 @@ Uses scipy convolution to detect horizontal lines because screenshots love their
 
 Runs EasyOCR on everything and counts characters like an obsessive librarian. If it finds enough readable text with decent confidence, it's probably a screenshot. Text in photos tends to be messier.
 
+With `--extra-heuristics` enabled, it also looks for:
+
+- Multiple large text blocks (>20 characters) with high confidence
+- Text concentrated in typical caption positions (bottom third of image)
+- High text density (characters per region) indicating coherent sentences
+
 ### Method 3: Both (Default)
 
 Runs horizontal detection first (because speed), then falls back to OCR if needed. It's like having a fast intern and a thorough expert working together.
 
 ## Performance Notes
 
-- We load the model upfront in each worker thread.
+- We load the model upfront in each worker process.
 - GPU acceleration actually works (MPS on Apple Silicon, CUDA on NVIDIA).
 - Workers persist throughout processing to avoid re-initializing OCR models repeatedly.
 - Rich UI updates without blocking the actual work (revolutionary!).
+- PyTorch pin_memory warnings on Apple Silicon are suppressed (they're harmless).
 
 ## Supported Formats
 
@@ -123,6 +134,7 @@ The usual suspects: `jpg`, `jpeg`, `png`, `bmp`, `gif`, `webp`, `tiff`, `heic`, 
 - **rich**: For those fancy terminal UIs that make you feel like a hacker
 - **structlog**: Structured logging because plain print statements are for peasants
 - **scipy/numpy**: The mathematical backbone of our hubris
+- **opencv-python**: For advanced image preprocessing (installed but currently unused)
 
 ## Exit Codes
 

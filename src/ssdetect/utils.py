@@ -82,24 +82,6 @@ def find_image_files(directory: Path) -> list[Path]:
     return sorted(set(image_files))
 
 
-def count_image_files(directory: Path) -> int:
-    """Count image files without loading all into memory."""
-    count = 0
-    seen = set()
-
-    for ext in IMAGE_EXTENSIONS:
-        for path in directory.rglob(f"*{ext}"):
-            if path not in seen:
-                seen.add(path)
-                count += 1
-        for path in directory.rglob(f"*{ext.upper()}"):
-            if path not in seen:
-                seen.add(path)
-                count += 1
-
-    return count
-
-
 def create_progress_bar(total: int, script_mode: bool = False) -> Progress | None:
     """Create a Rich progress bar for tracking processing."""
     if script_mode:
@@ -117,20 +99,19 @@ def create_progress_bar(total: int, script_mode: bool = False) -> Progress | Non
     )
 
 
-def move_file(src: Path, dst_dir: Path, dry_run: bool = False) -> Path:
+def move_file(src: Path, dst_dir: Path) -> Path:
     """Move a file to a destination directory, preserving relative path structure."""
     # Create destination directory if it doesn't exist (thread-safe)
-    if not dry_run:
-        try:
-            dst_dir.mkdir(parents=True, exist_ok=True)
-        except FileExistsError:
-            # Race condition: another process created it
-            pass
+    try:
+        dst_dir.mkdir(parents=True, exist_ok=True)
+    except FileExistsError:
+        # Race condition: another process created it
+        pass
 
     # Preserve original filename
     dst_path = dst_dir / src.name
 
-    # Handle name conflicts (check even in dry_run to show what would happen)
+    # Handle name conflicts
     if dst_path.exists():
         counter = 1
         stem = src.stem
@@ -139,26 +120,24 @@ def move_file(src: Path, dst_dir: Path, dry_run: bool = False) -> Path:
             dst_path = dst_dir / f"{stem}_{counter}{suffix}"
             counter += 1
 
-    if not dry_run:
-        shutil.move(str(src), str(dst_path))
+    shutil.move(str(src), str(dst_path))
 
     return dst_path
 
 
-def copy_file(src: Path, dst_dir: Path, dry_run: bool = False) -> Path:
+def copy_file(src: Path, dst_dir: Path) -> Path:
     """Copy a file to a destination directory, preserving relative path structure."""
     # Create destination directory if it doesn't exist (thread-safe)
-    if not dry_run:
-        try:
-            dst_dir.mkdir(parents=True, exist_ok=True)
-        except FileExistsError:
-            # Race condition: another process created it
-            pass
+    try:
+        dst_dir.mkdir(parents=True, exist_ok=True)
+    except FileExistsError:
+        # Race condition: another process created it
+        pass
 
     # Preserve original filename
     dst_path = dst_dir / src.name
 
-    # Handle name conflicts (check even in dry_run to show what would happen)
+    # Handle name conflicts
     if dst_path.exists():
         counter = 1
         stem = src.stem
@@ -167,7 +146,6 @@ def copy_file(src: Path, dst_dir: Path, dry_run: bool = False) -> Path:
             dst_path = dst_dir / f"{stem}_{counter}{suffix}"
             counter += 1
 
-    if not dry_run:
-        shutil.copy2(str(src), str(dst_path))
+    shutil.copy2(str(src), str(dst_path))
 
     return dst_path

@@ -31,11 +31,18 @@ detection_mode = None
 ocr_chars_threshold = None
 ocr_quality_threshold = None
 worker_logger = None
+extra_heuristics = None
 
 
-def worker_init(mode: str, ocr_chars: int, ocr_quality: float, use_gpu: bool) -> None:
+def worker_init(
+    mode: str,
+    ocr_chars: int,
+    ocr_quality: float,
+    use_gpu: bool,
+    use_extra_heuristics: bool,
+) -> None:
     """Initialize worker process with detection mode and OCR settings."""
-    global ocr_reader, detection_mode, ocr_chars_threshold, ocr_quality_threshold, worker_logger
+    global ocr_reader, detection_mode, ocr_chars_threshold, ocr_quality_threshold, worker_logger, extra_heuristics
 
     # Import structlog in worker process
     import structlog
@@ -46,6 +53,7 @@ def worker_init(mode: str, ocr_chars: int, ocr_quality: float, use_gpu: bool) ->
     detection_mode = mode
     ocr_chars_threshold = ocr_chars
     ocr_quality_threshold = ocr_quality
+    extra_heuristics = use_extra_heuristics
 
     # Initialize EasyOCR if needed
     if mode in ("ocr", "both"):
@@ -132,7 +140,7 @@ def classify_with_horizontal(img_array: np.ndarray) -> bool:
 
 
 def classify_with_ocr(image_path: Path) -> tuple[bool, Optional[str]]:
-    """Classify image using OCR text detection.
+    """Classify image using OCR text detection with advanced heuristics.
 
     Args:
         image_path: Path to the image
@@ -140,27 +148,69 @@ def classify_with_ocr(image_path: Path) -> tuple[bool, Optional[str]]:
     Returns:
         Tuple of (is_screenshot, error_message)
     """
-    global ocr_reader, ocr_chars_threshold, ocr_quality_threshold, worker_logger
+    global ocr_reader, ocr_chars_threshold, ocr_quality_threshold, worker_logger, extra_heuristics
 
     if ocr_reader is None:
         return False, "OCR not initialized"
 
     try:
+        # Load image to get dimensions
+        img = Image.open(image_path)
+        img_array = np.array(img)
+        img_height, img_width = img_array.shape[:2]
+
         # Read text from image
-        results = ocr_reader.readtext(str(image_path))
+        results = ocr_reader.readtext(img_array)
 
         if not results:
             return False, None
 
-        # Calculate total characters and average confidence
+        # Basic metrics
         total_chars = sum(len(text) for _, text, _ in results)
         avg_confidence = sum(conf for _, _, conf in results) / len(results)
 
-        # Check thresholds
-        is_screenshot = (
+        # Advanced metrics for better screenshot detection
+        high_conf_regions = sum(1 for _, _, conf in results if conf > 0.7)
+        large_text_blocks = sum(1 for _, text, _ in results if len(text) > 20)
+
+        # Check if text is in bottom third (common for captions)
+        bottom_third_y = img_height * 2 / 3
+        bottom_text_regions = sum(
+            1 for bbox, _, _ in results if min(pt[1] for pt in bbox) > bottom_third_y
+        )
+        has_bottom_text = bottom_text_regions > len(results) / 2
+
+        # Calculate text density
+        text_density = total_chars / len(results) if results else 0
+
+        # Screenshot scoring heuristic
+        is_screenshot = False
+
+        # Method 1: Traditional threshold check (always used)
+        if (
             total_chars >= ocr_chars_threshold
             and avg_confidence >= ocr_quality_threshold
-        )
+        ):
+            is_screenshot = True
+
+        # Additional heuristics only if enabled
+        elif extra_heuristics:
+            # Method 2: High-quality caption detection
+            # Look for high-confidence text blocks in typical caption positions
+            # But also check for coherent text (high text density)
+            if (
+                high_conf_regions >= 2
+                and large_text_blocks >= 2
+                and has_bottom_text
+                and total_chars >= 30
+                and text_density > 10
+            ):
+                is_screenshot = True
+
+            # Method 3: High text density with reasonable confidence
+            # Screenshots tend to have dense, readable text
+            elif text_density > 15 and avg_confidence > 0.45 and total_chars >= 50:
+                is_screenshot = True
 
         if worker_logger:
             worker_logger.debug(
@@ -168,6 +218,10 @@ def classify_with_ocr(image_path: Path) -> tuple[bool, Optional[str]]:
                 image=str(image_path),
                 total_chars=total_chars,
                 avg_confidence=avg_confidence,
+                high_conf_regions=high_conf_regions,
+                large_text_blocks=large_text_blocks,
+                has_bottom_text=has_bottom_text,
+                text_density=text_density,
                 is_screenshot=is_screenshot,
             )
 
@@ -223,17 +277,17 @@ def classify_image_worker(image_path: Path) -> tuple[bool, Optional[str]]:
 
 
 def process_image_task(
-    args: tuple[Path, int, Optional[Path], Optional[Path], bool],
+    args: tuple[Path, int, Optional[Path], Optional[Path]],
 ) -> ProcessResult:
     """Process a single image (classify and optionally move/copy).
 
     Args:
-        args: Tuple of (image_path, index, move_to, copy_to, dry_run)
+        args: Tuple of (image_path, index, move_to, copy_to)
 
     Returns:
         ProcessResult object
     """
-    image_path, index, move_to, copy_to, dry_run = args
+    image_path, index, move_to, copy_to = args
 
     # Classify the image
     is_screenshot, error = classify_image_worker(image_path)
@@ -246,9 +300,9 @@ def process_image_task(
     if is_screenshot and (move_to or copy_to):
         try:
             if move_to:
-                destination = move_file(image_path, move_to, dry_run)
+                destination = move_file(image_path, move_to)
             elif copy_to:
-                destination = copy_file(image_path, copy_to, dry_run)
+                destination = copy_file(image_path, copy_to)
         except Exception as e:
             return ProcessResult(
                 image_path, index, is_screenshot, f"Failed to move/copy: {str(e)}"
@@ -265,7 +319,6 @@ class ImageClassifier:
         logger: structlog.BoundLogger,
         move_to: Path | None = None,
         copy_to: Path | None = None,
-        dry_run: bool = False,
         json_output: bool = False,
         script_mode: bool = False,
         num_workers: int = 8,
@@ -273,12 +326,12 @@ class ImageClassifier:
         ocr_chars: int = 10,
         ocr_quality: float = 0.4,
         use_gpu: bool = True,
+        extra_heuristics: bool = False,
     ):
         """Initialize the classifier."""
         self.logger = logger
         self.move_to = move_to
         self.copy_to = copy_to
-        self.dry_run = dry_run
         self.json_output = json_output
         self.script_mode = script_mode
         self.num_workers = num_workers
@@ -286,6 +339,7 @@ class ImageClassifier:
         self.ocr_chars = ocr_chars
         self.ocr_quality = ocr_quality
         self.use_gpu = use_gpu
+        self.extra_heuristics = extra_heuristics
 
         # Statistics (protected by lock for thread safety)
         self.total_files = 0
@@ -350,7 +404,7 @@ class ImageClassifier:
         """Process files without Rich UI using multiprocessing."""
         # Prepare tasks
         tasks = [
-            (path, i, self.move_to, self.copy_to, self.dry_run)
+            (path, i, self.move_to, self.copy_to)
             for i, path in enumerate(image_files, 1)
         ]
 
@@ -363,6 +417,7 @@ class ImageClassifier:
                 self.ocr_chars,
                 self.ocr_quality,
                 self.use_gpu,
+                self.extra_heuristics,
             ),
         ) as pool:
             results = pool.map(process_image_task, tasks)
@@ -410,9 +465,9 @@ class ImageClassifier:
                     action = "none"
                     if res.is_screenshot and not res.error:
                         if self.move_to:
-                            action = "moved" if not self.dry_run else "would_move"
+                            action = "moved"
                         elif self.copy_to:
-                            action = "copied" if not self.dry_run else "would_copy"
+                            action = "copied"
 
                     table.add_row(str(res.image_path.name), classification, action)
 
@@ -423,7 +478,7 @@ class ImageClassifier:
 
             # Prepare tasks
             tasks = [
-                (path, i, self.move_to, self.copy_to, self.dry_run)
+                (path, i, self.move_to, self.copy_to)
                 for i, path in enumerate(image_files, 1)
             ]
 
@@ -436,6 +491,7 @@ class ImageClassifier:
                     self.ocr_chars,
                     self.ocr_quality,
                     self.use_gpu,
+                    self.extra_heuristics,
                 ),
             ) as pool:
                 # Start collector thread
@@ -506,9 +562,9 @@ class ImageClassifier:
             action = "none"
             if result.is_screenshot and (self.move_to or self.copy_to):
                 if self.move_to:
-                    action = "moved" if not self.dry_run else "would_move"
+                    action = "moved"
                 elif self.copy_to:
-                    action = "copied" if not self.dry_run else "would_copy"
+                    action = "copied"
 
             # Log result
             log_data = {
@@ -533,10 +589,10 @@ class ImageClassifier:
         }
 
         if self.move_to:
-            summary_data["action"] = "moved" if not self.dry_run else "would_move"
+            summary_data["action"] = "moved"
             summary_data["destination"] = str(self.move_to)
         elif self.copy_to:
-            summary_data["action"] = "copied" if not self.dry_run else "would_copy"
+            summary_data["action"] = "copied"
             summary_data["destination"] = str(self.copy_to)
 
         self.logger.info("Classification complete", **summary_data)
@@ -554,8 +610,6 @@ class ImageClassifier:
 
             if self.move_to or self.copy_to:
                 action = "Moved to" if self.move_to else "Copied to"
-                if self.dry_run:
-                    action = f"Would {action.lower()}"
                 destination = str(self.move_to or self.copy_to)
                 table.add_row(action, destination)
 

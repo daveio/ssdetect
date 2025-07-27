@@ -22,9 +22,6 @@ from ssdetect.utils import setup_logging
     "--copy", type=click.Path(path_type=Path), help="Copy screenshots to this directory"
 )
 @click.option(
-    "--dry-run", is_flag=True, help="Show what would be done without actually doing it"
-)
-@click.option(
     "--json", "output_json", is_flag=True, help="Output in JSON format for scripts"
 )
 @click.option("--script", is_flag=True, help="Disable rich UI for script usage")
@@ -65,11 +62,15 @@ from ssdetect.utils import setup_logging
 @click.option(
     "--no-gpu", is_flag=True, help="Disable GPU acceleration for OCR (use CPU only)"
 )
+@click.option(
+    "--extra-heuristics",
+    is_flag=True,
+    help="Enable additional heuristics for OCR detection (experimental)",
+)
 def cli(
     directory: Path,
     move: Path | None,
     copy: Path | None,
-    dry_run: bool,
     output_json: bool,
     script: bool,
     workers: int,
@@ -77,6 +78,7 @@ def cli(
     ocr_chars: int,
     ocr_quality: float,
     no_gpu: bool,
+    extra_heuristics: bool,
 ):
     """Classify images as screenshots or other.
 
@@ -105,7 +107,6 @@ def cli(
         logger=logger,
         move_to=move,
         copy_to=copy,
-        dry_run=dry_run,
         json_output=output_json,
         script_mode=script,
         num_workers=workers,
@@ -113,6 +114,7 @@ def cli(
         ocr_chars=ocr_chars,
         ocr_quality=ocr_quality,
         use_gpu=not no_gpu,
+        extra_heuristics=extra_heuristics,
     )
 
     # Run classification

@@ -2,6 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Important Notes for Claude
+
+- **NO --dry-run FLAG**: This tool does NOT have a `--dry-run` option. The default behavior is read-only (just classification). Files are only moved/copied when `--move` or `--copy` flags are explicitly used.
+- **USE --script FLAG**: When running ssdetect, always use the `--script` flag for cleaner output that's easier to parse. This disables the Rich UI and outputs simple lines to stdout/stderr.
+
 ## Project Overview
 
 `ssdetect` is a command-line tool for classifying images as screenshots or regular images using two detection methods:
@@ -26,21 +31,26 @@ uv run ssdetect --ocr input/          # OCR only (slower, more accurate)
 uv run ssdetect --both input/         # Both methods (default)
 
 # Common options
-uv run ssdetect --dry-run input/      # Preview without moving files
+uv run ssdetect --script input/       # Analyze with clean output (recommended for Claude)
 uv run ssdetect --workers=4 input/    # Adjust worker processes (default: 8)
 uv run ssdetect --no-gpu input/       # Disable GPU acceleration for OCR
+
+# OCR tuning options
+uv run ssdetect --ocr-chars=20 input/        # Minimum character count (default: 10)
+uv run ssdetect --ocr-quality=0.5 input/     # Minimum confidence (default: 0.4)
+uv run ssdetect --extra-heuristics input/    # Enable experimental heuristics
 ```
 
 ### Testing
 
 ```bash
-# Test with sample images
-uv run ssdetect --dry-run --horizontal input/
-uv run ssdetect --dry-run --ocr --workers=1 input/
+# Test with sample images (read-only by default)
+uv run ssdetect --script --horizontal input/
+uv run ssdetect --script --ocr --workers=1 input/
 
-# Test file operations
-uv run ssdetect --dry-run --move output/ input/
-uv run ssdetect --dry-run --copy output/ input/
+# Test file operations (ACTUALLY MOVES/COPIES FILES)
+uv run ssdetect --script --move output/ input/
+uv run ssdetect --script --copy output/ input/
 ```
 
 ## Architecture
@@ -61,6 +71,8 @@ uv run ssdetect --dry-run --copy output/ input/
 3. **Detection Methods**
    - `classify_with_horizontal()`: Uses scipy convolution for edge detection
    - `classify_with_ocr()`: Uses EasyOCR to count text characters and confidence
+     - Basic mode: Simple threshold check (chars >= threshold AND confidence >= threshold)
+     - With `--extra-heuristics`: Additional checks for caption-like text patterns
    - Combined mode runs horizontal first, then OCR if needed (OR logic)
 
 ### Multiprocessing Design
@@ -77,6 +89,11 @@ uv run ssdetect --dry-run --copy output/ input/
 - File operations (move/copy) handle name conflicts with incrementing counters
 - Structured logging with worker PIDs for debugging multiprocessing issues
 - Graceful error handling for OCR initialization failures
+- PyTorch pin_memory warnings are suppressed on Apple Silicon (MPS)
+- Extra heuristics look for text patterns common in screenshots:
+  - Multiple large text blocks (>20 characters)
+  - Text in bottom third of image (caption position)
+  - High text density (characters per region > 15)
 
 ## Dependencies
 
@@ -86,6 +103,7 @@ uv run ssdetect --dry-run --copy output/ input/
 - **rich**: Terminal UI for progress bars
 - **structlog**: Structured logging
 - **scipy/numpy**: Image processing
+- **opencv-python**: Advanced image preprocessing (installed for future enhancements)
 - **uv**: Fast Python package manager and runner
 
 ## Important Notes
