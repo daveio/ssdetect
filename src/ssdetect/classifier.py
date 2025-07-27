@@ -10,7 +10,11 @@ from typing import Optional
 import numpy as np
 import structlog
 from PIL import Image
+from pillow_heif import register_heif_opener
 from rich.console import Console
+
+# Register HEIF opener to support HEIC files
+register_heif_opener()
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel

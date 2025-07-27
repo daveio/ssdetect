@@ -73,13 +73,14 @@ def find_image_files(directory: Path) -> list[Path]:
     """Recursively find all image files in a directory."""
     image_files = []
 
-    for ext in IMAGE_EXTENSIONS:
-        # Case-insensitive search
-        image_files.extend(directory.rglob(f"*{ext}"))
-        image_files.extend(directory.rglob(f"*{ext.upper()}"))
+    # Get all files recursively
+    for file_path in directory.rglob("*"):
+        if file_path.is_file():
+            # Check if the file extension (case-insensitive) is in our supported list
+            if file_path.suffix.lower() in IMAGE_EXTENSIONS:
+                image_files.append(file_path)
 
-    # Remove duplicates and sort
-    return sorted(set(image_files))
+    return sorted(image_files)
 
 
 def create_progress_bar(total: int, script_mode: bool = False) -> Progress | None:
