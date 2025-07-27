@@ -61,6 +61,9 @@ uv run ssdetect --copy screenshots/ input/
 uv run ssdetect --workers=4 input/
 ```
 
+> [!NOTE]
+> When moving or copying images, any associated XMP sidecar files (metadata files used by photo editing software) are automatically moved/copied along with the main image file. This preserves your edits and metadata.
+
 ### OCR Fine-Tuning
 
 For when the defaults aren't good enough for your special use case:
@@ -121,15 +124,16 @@ Runs horizontal detection first (because speed), then falls back to OCR if neede
 
 ## Supported Formats
 
-The usual suspects: `jpg`, `jpeg`, `png`, `bmp`, `gif`, `webp`, `tiff`, `heic`, `avif`
+The usual suspects: `jpg`, `jpeg`, `png`, `bmp`, `gif`, `webp`, `tiff`, `heic`, `heif`, `avif`
 
 > [!NOTE]
-> HEIC support depends on your Pillow installation not having an existential crisis.
+> HEIC/HEIF support is provided through the `pillow-heif` plugin which is automatically installed.
 
 ## Dependencies
 
 - **screenshot_detector**: Some random Git repo that does the horizontal edge magic
 - **easyocr**: The OCR heavy lifter (warning: downloads models on first run)
+- **pillow-heif**: Enables HEIC/HEIF support for those iPhone photos
 - **click**: Because argparse is apparently too mainstream
 - **rich**: For those fancy terminal UIs that make you feel like a hacker
 - **structlog**: Structured logging because plain print statements are for peasants

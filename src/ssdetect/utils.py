@@ -101,7 +101,10 @@ def create_progress_bar(total: int, script_mode: bool = False) -> Progress | Non
 
 
 def move_file(src: Path, dst_dir: Path) -> Path:
-    """Move a file to a destination directory, preserving relative path structure."""
+    """Move a file to a destination directory, preserving relative path structure.
+
+    Also moves associated XMP sidecar files if they exist.
+    """
     # Create destination directory if it doesn't exist (thread-safe)
     try:
         dst_dir.mkdir(parents=True, exist_ok=True)
@@ -121,13 +124,33 @@ def move_file(src: Path, dst_dir: Path) -> Path:
             dst_path = dst_dir / f"{stem}_{counter}{suffix}"
             counter += 1
 
+    # Move the main file
     shutil.move(str(src), str(dst_path))
+
+    # Check for XMP sidecar files (case-insensitive)
+    xmp_files = []
+    for ext in [".xmp", ".XMP", ".Xmp"]:
+        xmp_path = src.parent / f"{src.stem}{ext}"
+        if xmp_path.exists():
+            xmp_files.append(xmp_path)
+
+    # Move XMP sidecars if they exist
+    for xmp_src in xmp_files:
+        xmp_dst = dst_path.parent / f"{dst_path.stem}{xmp_src.suffix}"
+        try:
+            shutil.move(str(xmp_src), str(xmp_dst))
+        except Exception:
+            # If XMP move fails, don't fail the entire operation
+            pass
 
     return dst_path
 
 
 def copy_file(src: Path, dst_dir: Path) -> Path:
-    """Copy a file to a destination directory, preserving relative path structure."""
+    """Copy a file to a destination directory, preserving relative path structure.
+
+    Also copies associated XMP sidecar files if they exist.
+    """
     # Create destination directory if it doesn't exist (thread-safe)
     try:
         dst_dir.mkdir(parents=True, exist_ok=True)
@@ -147,6 +170,23 @@ def copy_file(src: Path, dst_dir: Path) -> Path:
             dst_path = dst_dir / f"{stem}_{counter}{suffix}"
             counter += 1
 
+    # Copy the main file
     shutil.copy2(str(src), str(dst_path))
+
+    # Check for XMP sidecar files (case-insensitive)
+    xmp_files = []
+    for ext in [".xmp", ".XMP", ".Xmp"]:
+        xmp_path = src.parent / f"{src.stem}{ext}"
+        if xmp_path.exists():
+            xmp_files.append(xmp_path)
+
+    # Copy XMP sidecars if they exist
+    for xmp_src in xmp_files:
+        xmp_dst = dst_path.parent / f"{dst_path.stem}{xmp_src.suffix}"
+        try:
+            shutil.copy2(str(xmp_src), str(xmp_dst))
+        except Exception:
+            # If XMP copy fails, don't fail the entire operation
+            pass
 
     return dst_path

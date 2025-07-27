@@ -95,10 +95,16 @@ uv run ssdetect --script --copy output/ input/
   - Text in bottom third of image (caption position)
   - High text density (characters per region > 15)
 
+### File Operations
+
+- **XMP Sidecar Support**: When moving or copying images, associated XMP sidecar files (case-insensitive: .xmp, .XMP, .Xmp) are automatically moved/copied along with the main image file
+- **Name Conflict Resolution**: Both the main file and its XMP sidecar maintain their relationship when renamed due to conflicts
+
 ## Dependencies
 
 - **screenshot_detector**: Git dependency for horizontal edge detection
 - **easyocr**: OCR engine with GPU acceleration support
+- **pillow-heif**: HEIF/HEIC image format support for Pillow
 - **click**: CLI framework
 - **rich**: Terminal UI for progress bars
 - **structlog**: Structured logging
@@ -112,4 +118,5 @@ uv run ssdetect --script --copy output/ input/
 - First image in each worker takes longer due to OCR model loading
 - GPU acceleration (MPS/CUDA) provides significant performance improvement for OCR
 - The tool processes images recursively in the given directory
-- Supports common image formats: jpg, jpeg, png, bmp, gif, webp, tiff, heic, avif
+- Supports common image formats: jpg, jpeg, png, bmp, gif, webp, tiff, heic, heif, avif
+- HEIC/HEIF support is provided through the pillow-heif plugin
