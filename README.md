@@ -70,7 +70,7 @@ For when the defaults aren't good enough for your special use case:
 uv run ssdetect --ocr-chars=20 input/
 
 # Be more picky about text quality (generally not a great idea)
-uv run ssdetect --ocr-quality=0.8 input/
+uv run ssdetect --ocr-quality=0.6 input/
 
 # Disable GPU because you hate performance. Don't use this on
 # Apple Silicon - the MPS module is considered a GPU.

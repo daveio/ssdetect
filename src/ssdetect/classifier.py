@@ -324,7 +324,7 @@ class ImageClassifier:
         num_workers: int = 8,
         detection_mode: str = "both",
         ocr_chars: int = 10,
-        ocr_quality: float = 0.4,
+        ocr_quality: float = 0.6,
         use_gpu: bool = True,
         extra_heuristics: bool = False,
     ):

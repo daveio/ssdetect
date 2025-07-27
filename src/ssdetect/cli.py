@@ -56,8 +56,8 @@ from ssdetect.utils import setup_logging
 @click.option(
     "--ocr-quality",
     type=click.FloatRange(0.0, 1.0),
-    default=0.4,
-    help="Minimum average confidence for OCR (default: 0.4)",
+    default=0.6,
+    help="Minimum average confidence for OCR (default: 0.6)",
 )
 @click.option(
     "--no-gpu", is_flag=True, help="Disable GPU acceleration for OCR (use CPU only)"

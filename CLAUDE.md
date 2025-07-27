@@ -37,7 +37,7 @@ uv run ssdetect --no-gpu input/       # Disable GPU acceleration for OCR
 
 # OCR tuning options
 uv run ssdetect --ocr-chars=20 input/        # Minimum character count (default: 10)
-uv run ssdetect --ocr-quality=0.5 input/     # Minimum confidence (default: 0.4)
+uv run ssdetect --ocr-quality=0.5 input/     # Minimum confidence (default: 0.6)
 uv run ssdetect --extra-heuristics input/    # Enable experimental heuristics
 ```
 
