@@ -50,8 +50,19 @@ def worker_init(mode: str, ocr_chars: int, ocr_quality: float, use_gpu: bool) ->
     # Initialize EasyOCR if needed
     if mode in ("ocr", "both"):
         try:
+            import warnings
+
             import easyocr
             import torch
+
+            # Suppress the pin_memory warning on MPS
+            if torch.backends.mps.is_available():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=".*pin_memory.*MPS.*",
+                    category=UserWarning,
+                    module="torch.utils.data.dataloader",
+                )
 
             # Check if GPU should be used and is available
             gpu_available = False
@@ -260,7 +271,7 @@ class ImageClassifier:
         num_workers: int = 8,
         detection_mode: str = "both",
         ocr_chars: int = 10,
-        ocr_quality: float = 0.8,
+        ocr_quality: float = 0.4,
         use_gpu: bool = True,
     ):
         """Initialize the classifier."""
