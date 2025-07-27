@@ -63,9 +63,9 @@ from ssdetect.utils import setup_logging
     "--no-gpu", is_flag=True, help="Disable GPU acceleration for OCR (use CPU only)"
 )
 @click.option(
-    "--extra-heuristics",
-    is_flag=True,
-    help="Enable additional heuristics for OCR detection (experimental)",
+    "--extra-heuristics/--no-extra-heuristics",
+    default=True,
+    help="Enable/disable experimental heuristics for OCR detection (enabled by default)",
 )
 def cli(
     directory: Path,

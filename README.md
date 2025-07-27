@@ -76,9 +76,9 @@ uv run ssdetect --ocr-quality=0.6 input/
 # Apple Silicon - the MPS module is considered a GPU.
 uv run ssdetect --no-gpu input/
 
-# Enable experimental heuristics for better screenshot detection
-# (may help reduce false positives on images with engraved/natural text)
-uv run ssdetect --ocr --extra-heuristics input/
+# Disable experimental heuristics (enabled by default)
+# (experimental heuristics help reduce false positives on images with engraved/natural text)
+uv run ssdetect --ocr --no-extra-heuristics input/
 ```
 
 ### Output Formats
@@ -101,7 +101,7 @@ Uses scipy convolution to detect horizontal lines because screenshots love their
 
 Runs EasyOCR on everything and counts characters like an obsessive librarian. If it finds enough readable text with decent confidence, it's probably a screenshot. Text in photos tends to be messier.
 
-With `--extra-heuristics` enabled, it also looks for:
+By default (disable with `--no-extra-heuristics`), it also looks for:
 
 - Multiple large text blocks (>20 characters) with high confidence
 - Text concentrated in typical caption positions (bottom third of image)

@@ -38,7 +38,7 @@ uv run ssdetect --no-gpu input/       # Disable GPU acceleration for OCR
 # OCR tuning options
 uv run ssdetect --ocr-chars=20 input/        # Minimum character count (default: 10)
 uv run ssdetect --ocr-quality=0.5 input/     # Minimum confidence (default: 0.6)
-uv run ssdetect --extra-heuristics input/    # Enable experimental heuristics
+uv run ssdetect --no-extra-heuristics input/    # Disable experimental heuristics (enabled by default)
 ```
 
 ### Testing
@@ -72,7 +72,7 @@ uv run ssdetect --script --copy output/ input/
    - `classify_with_horizontal()`: Uses scipy convolution for edge detection
    - `classify_with_ocr()`: Uses EasyOCR to count text characters and confidence
      - Basic mode: Simple threshold check (chars >= threshold AND confidence >= threshold)
-     - With `--extra-heuristics`: Additional checks for caption-like text patterns
+     - With experimental heuristics (default, disable with `--no-extra-heuristics`): Additional checks for caption-like text patterns
    - Combined mode runs horizontal first, then OCR if needed (OR logic)
 
 ### Multiprocessing Design
@@ -90,7 +90,7 @@ uv run ssdetect --script --copy output/ input/
 - Structured logging with worker PIDs for debugging multiprocessing issues
 - Graceful error handling for OCR initialization failures
 - PyTorch pin_memory warnings are suppressed on Apple Silicon (MPS)
-- Extra heuristics look for text patterns common in screenshots:
+- Experimental heuristics (enabled by default) look for text patterns common in screenshots:
   - Multiple large text blocks (>20 characters)
   - Text in bottom third of image (caption position)
   - High text density (characters per region > 15)
