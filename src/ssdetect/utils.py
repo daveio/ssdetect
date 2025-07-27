@@ -129,10 +129,10 @@ def move_file(src: Path, dst_dir: Path) -> Path:
 
     # Check for XMP sidecar files (case-insensitive)
     xmp_files = []
-    for ext in [".xmp", ".XMP", ".Xmp"]:
-        xmp_path = src.parent / f"{src.stem}{ext}"
-        if xmp_path.exists():
-            xmp_files.append(xmp_path)
+    # Look for any file with same stem but different suffix
+    for file in src.parent.iterdir():
+        if file.stem == src.stem and file.suffix.lower() == ".xmp":
+            xmp_files.append(file)
 
     # Move XMP sidecars if they exist
     for xmp_src in xmp_files:
@@ -175,10 +175,10 @@ def copy_file(src: Path, dst_dir: Path) -> Path:
 
     # Check for XMP sidecar files (case-insensitive)
     xmp_files = []
-    for ext in [".xmp", ".XMP", ".Xmp"]:
-        xmp_path = src.parent / f"{src.stem}{ext}"
-        if xmp_path.exists():
-            xmp_files.append(xmp_path)
+    # Look for any file with same stem but different suffix
+    for file in src.parent.iterdir():
+        if file.stem == src.stem and file.suffix.lower() == ".xmp":
+            xmp_files.append(file)
 
     # Copy XMP sidecars if they exist
     for xmp_src in xmp_files:
