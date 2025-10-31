@@ -8,8 +8,8 @@ idiomatic_version_file_enable_tools = []
 
 
 [tools]
-python = { version = '3.13.5' }
-uv = { version = '0.8.4' }
+python = { version = '3.14.0' }
+uv = { version = '0.9.7' }
 'aqua:trunk-io/launcher' = { version = '1.3.4' }
 
 [tasks]
