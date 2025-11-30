@@ -1,5 +1,6 @@
 """Utility functions for ssdetect."""
 
+import contextlib
 import logging
 import shutil
 import sys
@@ -74,12 +75,11 @@ def find_image_files(directory: Path) -> list[Path]:
     image_files = []
 
     # Get all files recursively
-    for file_path in directory.rglob("*"):
-        if file_path.is_file():
-            # Check if the file extension (case-insensitive) is in our supported list
-            if file_path.suffix.lower() in IMAGE_EXTENSIONS:
-                image_files.append(file_path)
-
+    image_files.extend(
+        file_path
+        for file_path in directory.rglob("*")
+        if file_path.is_file() and file_path.suffix.lower() in IMAGE_EXTENSIONS
+    )
     return sorted(image_files)
 
 
@@ -106,12 +106,8 @@ def move_file(src: Path, dst_dir: Path) -> Path:
     Also moves associated XMP sidecar files if they exist.
     """
     # Create destination directory if it doesn't exist (thread-safe)
-    try:
+    with contextlib.suppress(FileExistsError):
         dst_dir.mkdir(parents=True, exist_ok=True)
-    except FileExistsError:
-        # Race condition: another process created it
-        pass
-
     # Preserve original filename
     dst_path = dst_dir / src.name
 
@@ -130,19 +126,16 @@ def move_file(src: Path, dst_dir: Path) -> Path:
     # Check for XMP sidecar files (case-insensitive)
     xmp_files = []
     # Look for any file with same stem but different suffix
-    for file in src.parent.iterdir():
-        if file.stem == src.stem and file.suffix.lower() == ".xmp":
-            xmp_files.append(file)
-
+    xmp_files.extend(
+        file
+        for file in src.parent.iterdir()
+        if file.stem == src.stem and file.suffix.lower() == ".xmp"
+    )
     # Move XMP sidecars if they exist
     for xmp_src in xmp_files:
         xmp_dst = dst_path.parent / f"{dst_path.stem}{xmp_src.suffix}"
-        try:
+        with contextlib.suppress(OSError, IOError, shutil.Error):
             shutil.move(str(xmp_src), str(xmp_dst))
-        except (OSError, IOError, shutil.Error):
-            # If XMP move fails, don't fail the entire operation
-            pass
-
     return dst_path
 
 
@@ -152,12 +145,8 @@ def copy_file(src: Path, dst_dir: Path) -> Path:
     Also copies associated XMP sidecar files if they exist.
     """
     # Create destination directory if it doesn't exist (thread-safe)
-    try:
+    with contextlib.suppress(FileExistsError):
         dst_dir.mkdir(parents=True, exist_ok=True)
-    except FileExistsError:
-        # Race condition: another process created it
-        pass
-
     # Preserve original filename
     dst_path = dst_dir / src.name
 
@@ -176,19 +165,16 @@ def copy_file(src: Path, dst_dir: Path) -> Path:
     # Check for XMP sidecar files (case-insensitive)
     xmp_files = []
     # Look for any file with same stem but different suffix
-    for file in src.parent.iterdir():
-        if file.stem == src.stem and file.suffix.lower() == ".xmp":
-            xmp_files.append(file)
-
+    xmp_files.extend(
+        file
+        for file in src.parent.iterdir()
+        if file.stem == src.stem and file.suffix.lower() == ".xmp"
+    )
     # Copy XMP sidecars if they exist
     for xmp_src in xmp_files:
         xmp_dst = dst_path.parent / f"{dst_path.stem}{xmp_src.suffix}"
-        try:
+        with contextlib.suppress(OSError, IOError, shutil.Error):
             shutil.copy2(str(xmp_src), str(xmp_dst))
-        except (OSError, IOError, shutil.Error):
-            # If XMP copy fails, don't fail the entire operation
-            pass
-
     return dst_path
 
 
@@ -199,27 +185,21 @@ def load_config() -> dict:
     # Check for pyproject.toml
     pyproject_path = Path("pyproject.toml")
     if pyproject_path.exists():
-        try:
+        with contextlib.suppress(Exception):
             import tomllib
 
             with open(pyproject_path, "rb") as f:
                 data = tomllib.load(f)
-                config.update(data.get("tool", {}).get("ssdetect", {}))
-        except Exception:
-            pass
-
+                config |= data.get("tool", {}).get("ssdetect", {})
     # Check for ssdetect.toml (overrides pyproject.toml)
     config_path = Path("ssdetect.toml")
     if config_path.exists():
-        try:
+        with contextlib.suppress(Exception):
             import tomllib
 
             with open(config_path, "rb") as f:
                 data = tomllib.load(f)
                 config.update(data.get("ssdetect", {}))
-        except Exception:
-            pass
-
     # Normalize keys to match CLI options (e.g. ocr-chars -> ocr_chars)
     normalized_config = {}
     for key, value in config.items():

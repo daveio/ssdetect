@@ -1,3 +1,5 @@
+# trunk-ignore-all(bandit/B101)
+
 from ssdetect.utils import copy_file, find_image_files, move_file
 
 

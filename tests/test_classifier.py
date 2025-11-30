@@ -1,3 +1,5 @@
+# trunk-ignore-all(bandit/B101)
+
 from unittest.mock import MagicMock, patch
 
 import numpy as np

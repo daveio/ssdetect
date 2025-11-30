@@ -98,7 +98,7 @@ def cli(
         sys.exit(1)
 
     # Validate OCR parameters
-    if detection_mode in ("ocr", "both"):
+    if detection_mode in {"ocr", "both"}:
         if ocr_chars < 1:
             click.echo("Error: --ocr-chars must be at least 1", err=True)
             sys.exit(1)

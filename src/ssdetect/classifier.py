@@ -64,46 +64,50 @@ def worker_init(
     ocr_resize_factor = resize_factor
 
     # Initialize EasyOCR if needed
-    if mode in ("ocr", "both"):
+    if mode in {"ocr", "both"}:
         try:
-            import warnings
-
-            import easyocr
-            import torch
-
-            # Suppress the pin_memory warning on MPS
-            if torch.backends.mps.is_available():
-                warnings.filterwarnings(
-                    "ignore",
-                    message=".*pin_memory.*MPS.*",
-                    category=UserWarning,
-                    module="torch.utils.data.dataloader",
-                )
-
-            # Check if GPU should be used and is available
-            gpu_available = False
-            if use_gpu:
-                if torch.backends.mps.is_available():
-                    # MPS is available on Apple Silicon
-                    gpu_available = True
-                    worker_logger.info(
-                        "Using Apple Silicon GPU (MPS) for OCR acceleration"
-                    )
-                elif torch.cuda.is_available():
-                    # CUDA is available (NVIDIA GPU)
-                    gpu_available = True
-                    worker_logger.info("Using NVIDIA GPU (CUDA) for OCR acceleration")
-                else:
-                    worker_logger.warning("GPU requested but not available, using CPU")
-
-            # Initialize with English language support
-            # Note: EasyOCR's gpu parameter expects True/False, not device type
-            # It will automatically use MPS on Apple Silicon if available
-            ocr_reader = easyocr.Reader(["en"], gpu=gpu_available)
+            setup_ocr(use_gpu, worker_logger)
         except Exception as e:
             # If OCR initialization fails, log the error
             worker_logger.error("Failed to initialize OCR", error=str(e))
             ocr_reader = None
+
+
+# TODO Rename this here and in `worker_init`
+def setup_ocr(use_gpu, worker_logger):
+    import warnings
+
+    import easyocr
+    import torch
+
+    # Suppress the pin_memory warning on MPS
+    if torch.backends.mps.is_available():
+        warnings.filterwarnings(
+            "ignore",
+            message=".*pin_memory.*MPS.*",
+            category=UserWarning,
+            module="torch.utils.data.dataloader",
+        )
+
+    # Check if GPU should be used and is available
+    gpu_available = False
+    if torch.backends.mps.is_available():
+        if use_gpu:
+            # MPS is available on Apple Silicon
+            gpu_available = True
+            worker_logger.info("Using Apple Silicon GPU (MPS) for OCR acceleration")
+    elif torch.cuda.is_available():
+        if use_gpu:
+            # CUDA is available (NVIDIA GPU)
+            gpu_available = True
+            worker_logger.info("Using NVIDIA GPU (CUDA) for OCR acceleration")
+    elif use_gpu:
+        worker_logger.warning("GPU requested but not available, using CPU")
+
+    # Initialize with English language support
+    # Note: EasyOCR's gpu parameter expects True/False, not device type
+    # It will automatically use MPS on Apple Silicon if available
+    return easyocr.Reader(["en"], gpu=gpu_available)
 
 
 @dataclass
@@ -187,13 +191,13 @@ def classify_with_ocr(image_path: Path) -> tuple[bool, Optional[str]]:
         avg_confidence = sum(conf for _, _, conf in results) / len(results)
 
         # Advanced metrics for better screenshot detection
-        high_conf_regions = sum(1 for _, _, conf in results if conf > 0.7)
-        large_text_blocks = sum(1 for _, text, _ in results if len(text) > 20)
+        high_conf_regions = sum(conf > 0.7 for _, _, conf in results)
+        large_text_blocks = sum(len(text) > 20 for _, text, _ in results)
 
         # Check if text is in bottom third (common for captions)
         bottom_third_y = img_height * 2 / 3
         bottom_text_regions = sum(
-            1 for bbox, _, _ in results if min(pt[1] for pt in bbox) > bottom_third_y
+            min(pt[1] for pt in bbox) > bottom_third_y for bbox, _, _ in results
         )
         has_bottom_text = bottom_text_regions > len(results) / 2
 
@@ -277,11 +281,7 @@ def classify_image_worker(image_path: Path) -> tuple[bool, Optional[str]]:
         if detection_mode in ("ocr", "both"):
             is_screenshot_ocr, error = classify_with_ocr(image_path)
 
-            if error:
-                return False, error
-
-            return is_screenshot_ocr, None
-
+            return (False, error) if error else (is_screenshot_ocr, None)
         # Should not reach here
         return False, None
 
@@ -368,7 +368,7 @@ class ImageClassifier:
         self.stats_lock = threading.Lock()
 
         # For non-script mode
-        self.console = Console(stderr=True) if not script_mode else None
+        self.console = None if script_mode else Console(stderr=True)
 
     def process_directory(self, directory: Path) -> int:
         """Process all images in the given directory.
@@ -570,35 +570,35 @@ class ImageClassifier:
                 error=result.error,
             )
         else:
-            # Update statistics
-            with self.stats_lock:
-                if result.is_screenshot:
-                    self.screenshots += 1
-                    classification = "screenshot"
-                else:
-                    self.other_images += 1
-                    classification = "other"
+            self.take_action(result)
 
-            # Determine action
-            action = "none"
-            if result.is_screenshot and (self.move_to or self.copy_to):
-                if self.move_to:
-                    action = "moved"
-                elif self.copy_to:
-                    action = "copied"
+    # TODO Rename this here and in `_handle_result`
+    def take_action(self, result):
+        # Update statistics
+        with self.stats_lock:
+            if result.is_screenshot:
+                self.screenshots += 1
+                classification = "screenshot"
+            else:
+                self.other_images += 1
+                classification = "other"
 
-            # Log result
-            log_data = {
-                "file": str(result.image_path),
-                "index": result.index,
-                "classification": classification,
-                "action": action,
-            }
+        # Determine action
+        action = "none"
+        if result.is_screenshot and (self.move_to or self.copy_to):
+            action = "moved" if self.move_to else "copied"
+        # Log result
+        log_data = {
+            "file": str(result.image_path),
+            "index": result.index,
+            "classification": classification,
+            "action": action,
+        }
 
-            if result.destination:
-                log_data["destination"] = str(result.destination)
+        if result.destination:
+            log_data["destination"] = str(result.destination)
 
-            self.logger.info("Processed image", **log_data)
+        self.logger.info("Processed image", **log_data)
 
     def _log_summary(self) -> None:
         """Log a summary of the processing results."""
