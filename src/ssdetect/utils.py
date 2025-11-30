@@ -190,3 +190,40 @@ def copy_file(src: Path, dst_dir: Path) -> Path:
             pass
 
     return dst_path
+
+
+def load_config() -> dict:
+    """Load configuration from pyproject.toml or ssdetect.toml."""
+    config = {}
+
+    # Check for pyproject.toml
+    pyproject_path = Path("pyproject.toml")
+    if pyproject_path.exists():
+        try:
+            import tomllib
+
+            with open(pyproject_path, "rb") as f:
+                data = tomllib.load(f)
+                config.update(data.get("tool", {}).get("ssdetect", {}))
+        except Exception:
+            pass
+
+    # Check for ssdetect.toml (overrides pyproject.toml)
+    config_path = Path("ssdetect.toml")
+    if config_path.exists():
+        try:
+            import tomllib
+
+            with open(config_path, "rb") as f:
+                data = tomllib.load(f)
+                config.update(data.get("ssdetect", {}))
+        except Exception:
+            pass
+
+    # Normalize keys to match CLI options (e.g. ocr-chars -> ocr_chars)
+    normalized_config = {}
+    for key, value in config.items():
+        normalized_key = key.replace("-", "_")
+        normalized_config[normalized_key] = value
+
+    return normalized_config

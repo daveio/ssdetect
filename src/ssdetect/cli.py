@@ -67,6 +67,12 @@ from ssdetect.utils import setup_logging
     default=True,
     help="Enable/disable experimental heuristics for OCR detection (enabled by default)",
 )
+@click.option(
+    "--ocr-resize",
+    type=click.FloatRange(0.1, 1.0),
+    default=1.0,
+    help="Resize factor for OCR (default: 1.0, use < 1.0 for speedup)",
+)
 def cli(
     directory: Path,
     move: Path | None,
@@ -79,6 +85,7 @@ def cli(
     ocr_quality: float,
     no_gpu: bool,
     extra_heuristics: bool,
+    ocr_resize: float,
 ):
     """Classify images as screenshots or other.
 
@@ -115,6 +122,7 @@ def cli(
         ocr_quality=ocr_quality,
         use_gpu=not no_gpu,
         extra_heuristics=extra_heuristics,
+        ocr_resize_factor=ocr_resize,
     )
 
     # Run classification

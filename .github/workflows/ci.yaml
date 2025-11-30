@@ -1,0 +1,29 @@
+name: ci
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+  issues: write
+  pull-requests: write
+  security-events: write
+"on":
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.13"]
+    steps:
+      - uses: actions/checkout@c2d88d3ecc89a9ef08eebf45d9637801dcee7eb5
+      - name: uv
+        uses: astral-sh/setup-uv@06e4edb239928eb926db9fa84abd11632bf44baa
+      - name: python
+        run: uv python install ${{ matrix.python-version }}
+      - name: deps
+        run: uv sync --all-extras --dev
+      - name: pytest
+        run: uv run pytest

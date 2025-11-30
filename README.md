@@ -82,6 +82,10 @@ uv run ssdetect --no-gpu input/
 # Disable experimental heuristics (enabled by default)
 # (experimental heuristics help reduce false positives on images with engraved/natural text)
 uv run ssdetect --ocr --no-extra-heuristics input/
+
+# Resize images before OCR for better performance (default: 1.0, no resize)
+# Use values < 1.0 to speed up OCR on large images
+uv run ssdetect --ocr-resize=0.5 input/
 ```
 
 ### Output Formats
@@ -93,6 +97,32 @@ uv run ssdetect --json input/
 # Script mode (disables the fancy progress bars)
 uv run ssdetect --script input/
 ```
+
+### Configuration Files
+
+You can set default options in a configuration file instead of passing them on the command line every time:
+
+**Option 1: Add to `pyproject.toml`:**
+
+```toml
+[tool.ssdetect]
+ocr-chars = 20
+ocr-quality = 0.8
+ocr-resize = 0.5
+detection-mode = "both"
+```
+
+**Option 2: Create `ssdetect.toml` in the current directory:**
+
+```toml
+[ssdetect]
+ocr-chars = 20
+ocr-quality = 0.8
+ocr-resize = 0.5
+```
+
+> [!NOTE]
+> Configuration file values are used as defaults. Command-line arguments will override these settings. Keys use dashes (e.g., `ocr-chars`), which are automatically converted to match CLI option names.
 
 ## How It Works
 
@@ -147,6 +177,29 @@ The usual suspects: `jpg`, `jpeg`, `png`, `bmp`, `gif`, `webp`, `tiff`, `heic`, 
 - `130`: User got impatient and hit Ctrl+C
 
 ## Development
+
+### Running Tests
+
+The project includes a comprehensive test suite:
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run tests with verbose output
+uv run pytest -v
+
+# Run specific test file
+uv run pytest tests/test_classifier.py
+```
+
+### Continuous Integration
+
+GitHub Actions automatically runs the test suite on every push and pull request to the `main` branch. The workflow:
+
+- Sets up Python 3.13
+- Installs dependencies using `uv`
+- Runs the full test suite
 
 ### Code Quality
 

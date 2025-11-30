@@ -38,7 +38,23 @@ uv run ssdetect --no-gpu input/       # Disable GPU acceleration for OCR
 # OCR tuning options
 uv run ssdetect --ocr-chars=20 input/        # Minimum character count (default: 10)
 uv run ssdetect --ocr-quality=0.5 input/     # Minimum confidence (default: 0.6)
-uv run ssdetect --no-extra-heuristics input/    # Disable experimental heuristics (enabled by default)
+uv run ssdetect --no-extra-heuristics input/ # Disable experimental heuristics (enabled by default)
+uv run ssdetect --ocr-resize=0.5 input/      # Resize images before OCR for better performance (default: 1.0)
+```
+
+### Configuration Files
+
+```bash
+# You can set defaults in pyproject.toml:
+[tool.ssdetect]
+ocr-chars = 20
+ocr-quality = 0.8
+ocr-resize = 0.5
+
+# Or in ssdetect.toml:
+[ssdetect]
+ocr-chars = 20
+ocr-quality = 0.8
 ```
 
 ### Testing
@@ -69,6 +85,19 @@ trunk fmt -a
 trunk fmt src/
 ```
 
+### Running Tests
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run tests with verbose output
+uv run pytest -v
+
+# Run specific test file
+uv run pytest tests/test_classifier.py
+```
+
 ## Architecture
 
 ### Core Components
@@ -83,6 +112,7 @@ trunk fmt src/
    - Multiprocessing pool with persistent worker initialization
    - Two processing modes: simple (for scripts) and rich (with progress UI)
    - Worker processes initialized once with EasyOCR to avoid repeated model loading
+   - Image resizing option for OCR performance optimization
 
 3. **Detection Methods**
    - `classify_with_horizontal()`: Uses scipy convolution for edge detection
@@ -111,6 +141,22 @@ trunk fmt src/
   - Text in bottom third of image (caption position)
   - High text density (characters per region > 15)
 
+### Configuration System
+
+- Configuration can be loaded from `pyproject.toml` under `[tool.ssdetect]` section
+- Or from `ssdetect.toml` under `[ssdetect]` section (takes precedence)
+- CLI arguments override configuration file values
+- Keys use dashes (e.g., `ocr-chars`) which are converted to underscores internally
+
+### Testing Infrastructure
+
+- **Test Suite**: Comprehensive pytest-based tests in `tests/` directory
+  - `tests/conftest.py`: Fixtures for temporary directories and sample images
+  - `tests/test_utils.py`: Tests for utility functions (file operations, image finding)
+  - `tests/test_classifier.py`: Tests for classification logic with mocked dependencies
+- **CI/CD**: GitHub Actions workflow (`.github/workflows/ci.yaml`) runs tests on every push/PR
+- **Test execution**: Uses mocks for external dependencies (EasyOCR, screenshot_detector)
+
 ### File Operations
 
 - **XMP Sidecar Support**: When moving or copying images, associated XMP sidecar files (case-insensitive: .xmp, .XMP, .Xmp) are automatically moved/copied along with the main image file
@@ -127,6 +173,7 @@ trunk fmt src/
 - **scipy/numpy**: Image processing
 - **opencv-python**: Advanced image preprocessing (installed for future enhancements)
 - **uv**: Fast Python package manager and runner
+- **pytest**: Testing framework (dev dependency)
 
 ## Important Notes
 

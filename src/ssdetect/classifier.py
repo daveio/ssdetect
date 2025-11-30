@@ -36,6 +36,7 @@ ocr_chars_threshold = None
 ocr_quality_threshold = None
 worker_logger = None
 extra_heuristics = None
+ocr_resize_factor = 1.0
 
 
 def worker_init(
@@ -44,9 +45,10 @@ def worker_init(
     ocr_quality: float,
     use_gpu: bool,
     use_extra_heuristics: bool,
+    resize_factor: float = 1.0,
 ) -> None:
     """Initialize worker process with detection mode and OCR settings."""
-    global ocr_reader, detection_mode, ocr_chars_threshold, ocr_quality_threshold, worker_logger, extra_heuristics
+    global ocr_reader, detection_mode, ocr_chars_threshold, ocr_quality_threshold, worker_logger, extra_heuristics, ocr_resize_factor
 
     # Import structlog in worker process
     import structlog
@@ -57,7 +59,9 @@ def worker_init(
     detection_mode = mode
     ocr_chars_threshold = ocr_chars
     ocr_quality_threshold = ocr_quality
+    ocr_quality_threshold = ocr_quality
     extra_heuristics = use_extra_heuristics
+    ocr_resize_factor = resize_factor
 
     # Initialize EasyOCR if needed
     if mode in ("ocr", "both"):
@@ -152,7 +156,7 @@ def classify_with_ocr(image_path: Path) -> tuple[bool, Optional[str]]:
     Returns:
         Tuple of (is_screenshot, error_message)
     """
-    global ocr_reader, ocr_chars_threshold, ocr_quality_threshold, worker_logger, extra_heuristics
+    global ocr_reader, ocr_chars_threshold, ocr_quality_threshold, worker_logger, extra_heuristics, ocr_resize_factor
 
     if ocr_reader is None:
         return False, "OCR not initialized"
@@ -160,6 +164,15 @@ def classify_with_ocr(image_path: Path) -> tuple[bool, Optional[str]]:
     try:
         # Load image to get dimensions
         img = Image.open(image_path)
+
+        # Resize if needed
+        if ocr_resize_factor != 1.0:
+            new_size = (
+                int(img.width * ocr_resize_factor),
+                int(img.height * ocr_resize_factor),
+            )
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+
         img_array = np.array(img)
         img_height, img_width = img_array.shape[:2]
 
@@ -331,6 +344,7 @@ class ImageClassifier:
         ocr_quality: float = 0.6,
         use_gpu: bool = True,
         extra_heuristics: bool = False,
+        ocr_resize_factor: float = 1.0,
     ):
         """Initialize the classifier."""
         self.logger = logger
@@ -344,6 +358,7 @@ class ImageClassifier:
         self.ocr_quality = ocr_quality
         self.use_gpu = use_gpu
         self.extra_heuristics = extra_heuristics
+        self.ocr_resize_factor = ocr_resize_factor
 
         # Statistics (protected by lock for thread safety)
         self.total_files = 0
@@ -422,6 +437,7 @@ class ImageClassifier:
                 self.ocr_quality,
                 self.use_gpu,
                 self.extra_heuristics,
+                self.ocr_resize_factor,
             ),
         ) as pool:
             results = pool.map(process_image_task, tasks)
@@ -496,6 +512,7 @@ class ImageClassifier:
                     self.ocr_quality,
                     self.use_gpu,
                     self.extra_heuristics,
+                    self.ocr_resize_factor,
                 ),
             ) as pool:
                 # Start collector thread

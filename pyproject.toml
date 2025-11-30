@@ -24,3 +24,6 @@ build-backend = "uv_build"
 
 [tool.uv.sources]
 screenshot-detector = { git = "https://github.com/dukn/screenshot_detector.git" }
+
+[dependency-groups]
+dev = ["pytest>=9.0.1"]
