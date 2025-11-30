@@ -73,7 +73,6 @@ def worker_init(
             ocr_reader = None
 
 
-# TODO Rename this here and in `worker_init`
 def setup_ocr(use_gpu, worker_logger):
     import warnings
 
@@ -572,7 +571,6 @@ class ImageClassifier:
         else:
             self.take_action(result)
 
-    # TODO Rename this here and in `_handle_result`
     def take_action(self, result):
         # Update statistics
         with self.stats_lock:
