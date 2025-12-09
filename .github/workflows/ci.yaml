@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
       - name: uv
-        uses: astral-sh/setup-uv@9c12baee9699f1b4f4318d7175fab8635c2b8e45
+        uses: astral-sh/setup-uv@ed21f2f24f8dd64503750218de024bcf64c7250a
       - name: python
         run: uv python install ${{ matrix.python-version }}
       - name: deps
