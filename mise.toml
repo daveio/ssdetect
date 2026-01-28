@@ -3,13 +3,13 @@ SSDETECT_MISE_ACTIVE = 'true'
 
 [settings]
 env_file = '.env'
-idiomatic_version_file = false
-idiomatic_version_file_enable_tools = []
-
 
 [tools]
-python = { version = '3.14.0' }
-uv = { version = '0.9.13' }
+claude = { version = '2.1.22' }
+codex = { version = '0.92.0' }
+gemini = { version = '0.26.0' }
+python = { version = '3.14.2' }
+uv = { version = '0.9.27' }
 
 [tasks]
 'claude' = { run = "bun run claude", description = "Invoke Claude Code", alias = "cc" }

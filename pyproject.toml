@@ -3,14 +3,14 @@ name = "ssdetect"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
+requires-python = ">=3.9"
 authors = [{ name = "Dave Williams", email = "dave@dave.io" }]
-requires-python = ">=3.13"
 dependencies = [
   "click>=8.3.1",
   "easyocr>=1.7.2",
-  "pillow>=12.0.0",
-  "pillow-heif>=1.1.1",
-  "rich>=14.2.0",
+  "pillow>=12.1.0",
+  "pillow-heif>=1.2.0",
+  "rich>=14.3.1",
   "screenshot-detector",
   "structlog>=25.5.0",
 ]
@@ -18,12 +18,12 @@ dependencies = [
 [project.scripts]
 ssdetect = "ssdetect:main"
 
+[dependency-groups]
+dev = ["pytest>=9.0.2"]
+
 [build-system]
-requires = ["uv_build>=0.8.3,<0.10.0"]
+requires = ["uv_build>=0.9.27,<0.10.0"]
 build-backend = "uv_build"
 
 [tool.uv.sources]
 screenshot-detector = { git = "https://github.com/dukn/screenshot_detector.git" }
-
-[dependency-groups]
-dev = ["pytest>=9.0.1"]
